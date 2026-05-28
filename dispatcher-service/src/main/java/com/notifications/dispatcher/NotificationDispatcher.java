@@ -29,6 +29,7 @@ public class NotificationDispatcher {
     private final NotificationEventRepository notificationEventRepository;
     private final DeliveryLogRepository deliveryLogRepository;
     private final KafkaTemplate<String, NotificationRequest> kafkaTemplate;
+    private final MetricsService metricsService;
 
     public NotificationDispatcher(
             SlidingWindowRateLimiter slidingWindowRateLimiter,
@@ -36,7 +37,8 @@ public class NotificationDispatcher {
             InAppChannelWorker inAppChannelWorker,
             NotificationEventRepository notificationEventRepository,
             DeliveryLogRepository deliveryLogRepository,
-            KafkaTemplate<String, NotificationRequest> kafkaTemplate
+            KafkaTemplate<String, NotificationRequest> kafkaTemplate,
+            MetricsService metricsService
     ) {
         this.slidingWindowRateLimiter = slidingWindowRateLimiter;
         this.emailChannelWorker = emailChannelWorker;
@@ -44,6 +46,7 @@ public class NotificationDispatcher {
         this.notificationEventRepository = notificationEventRepository;
         this.deliveryLogRepository = deliveryLogRepository;
         this.kafkaTemplate = kafkaTemplate;
+        this.metricsService = metricsService;
     }
 
     @Transactional
@@ -59,23 +62,39 @@ public class NotificationDispatcher {
         if (!allowed) {
             notificationEvent.setStatus("THROTTLED");
             notificationEventRepository.save(notificationEvent);
+            metricsService.recordDispatched(req.getChannel().name(), "THROTTLED");
             log.info("Throttled notification for user={}", req.getUserId());
             return;
         }
 
+        long deliveryStartTime = System.nanoTime();
         try {
             DeliveryResult result = deliver(req);
-            notificationEvent.setStatus(result.delivered() ? "SENT" : "FAILED");
+            String status = result.delivered() ? "SENT" : "FAILED";
+            notificationEvent.setStatus(status);
             notificationEventRepository.save(notificationEvent);
-            saveDeliveryLog(notificationEvent, req.getChannel(), "SUCCESS", null);
+            saveDeliveryLog(
+                    notificationEvent,
+                    req.getChannel(),
+                    result.delivered() ? "SUCCESS" : "FAIL",
+                    result.errorMessage()
+            );
+            metricsService.recordDispatched(req.getChannel().name(), status);
         } catch (Exception exception) {
             notificationEvent.setStatus("FAILED");
             notificationEventRepository.save(notificationEvent);
             saveDeliveryLog(notificationEvent, req.getChannel(), "FAIL", exception.getMessage());
             kafkaTemplate.send(KafkaTopics.NOTIFICATION_DLQ, req.getUserId(), req).join();
+            metricsService.recordDispatched(req.getChannel().name(), "FAILED");
+            metricsService.recordDlqPublished(req.getChannel().name());
             log.error("Delivery failed, sent to DLQ: notificationId={} error={}",
                     notificationEvent.getId(),
                     exception.getMessage());
+        } finally {
+            metricsService.recordDeliveryDuration(
+                    req.getChannel().name(),
+                    System.nanoTime() - deliveryStartTime
+            );
         }
     }
 
@@ -111,10 +130,14 @@ public class NotificationDispatcher {
         DeliveryLog deliveryLog = new DeliveryLog();
         deliveryLog.setId(UUID.randomUUID().toString());
         deliveryLog.setNotificationEvent(notificationEvent);
-        deliveryLog.setAttemptNumber(1);
+        deliveryLog.setAttemptNumber(nextAttemptNumber(notificationEvent.getId()));
         deliveryLog.setChannel(channel);
         deliveryLog.setStatus(status);
         deliveryLog.setErrorMessage(errorMessage);
         deliveryLogRepository.save(deliveryLog);
+    }
+
+    private int nextAttemptNumber(String notificationId) {
+        return Math.toIntExact(deliveryLogRepository.countByNotificationEventId(notificationId) + 1);
     }
 }

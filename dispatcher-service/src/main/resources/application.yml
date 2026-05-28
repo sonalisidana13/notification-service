@@ -26,10 +26,17 @@ spring:
             enable: false
 
 management:
+  endpoint:
+    prometheus:
+      enabled: true
   endpoints:
     web:
       exposure:
         include: health,prometheus
+  metrics:
+    export:
+      prometheus:
+        enabled: true
 
 rate:
   limit:
