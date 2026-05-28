@@ -6,6 +6,10 @@ spring:
     name: enricher-service
   kafka:
     bootstrap-servers: localhost:9092
+    consumer:
+      group-id: enricher-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
 
 management:
   endpoints:
