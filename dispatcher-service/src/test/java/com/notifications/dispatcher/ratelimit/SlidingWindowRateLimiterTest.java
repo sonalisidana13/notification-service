@@ -2,20 +2,27 @@ package com.notifications.dispatcher.ratelimit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.notificationservice.dispatcher.DispatcherServiceApplication;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
+import org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration;
+import org.springframework.boot.autoconfigure.mail.MailSenderAutoConfiguration;
+import org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-@SpringBootTest(classes = DispatcherServiceApplication.class)
+@SpringBootTest(classes = SlidingWindowRateLimiterTest.TestApplication.class)
 @Testcontainers(disabledWithoutDocker = true)
 class SlidingWindowRateLimiterTest {
 
@@ -81,5 +88,17 @@ class SlidingWindowRateLimiterTest {
         Thread.sleep(WINDOW_MS + 150L);
 
         assertThat(slidingWindowRateLimiter.isAllowed(USER_ID, EMAIL_CHANNEL, TENANT_ID)).isTrue();
+    }
+
+    @SpringBootConfiguration
+    @EnableAutoConfiguration(exclude = {
+            DataSourceAutoConfiguration.class,
+            HibernateJpaAutoConfiguration.class,
+            FlywayAutoConfiguration.class,
+            MailSenderAutoConfiguration.class,
+            KafkaAutoConfiguration.class
+    })
+    @Import({RateLimitConfig.class, SlidingWindowRateLimiter.class})
+    static class TestApplication {
     }
 }

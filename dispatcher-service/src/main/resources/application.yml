@@ -4,11 +4,37 @@ server:
 spring:
   application:
     name: dispatcher-service
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5433/notification_db}
+    username: ${SPRING_DATASOURCE_USERNAME:nsuser}
+    password: ${SPRING_DATASOURCE_PASSWORD:nspass}
+  flyway:
+    enabled: true
+  jpa:
+    hibernate:
+      ddl-auto: validate
   kafka:
     bootstrap-servers: localhost:9092
+  mail:
+    host: localhost
+    port: 1025
+    properties:
+      mail:
+        smtp:
+          auth: false
+          starttls:
+            enable: false
 
 management:
   endpoints:
     web:
       exposure:
         include: health,prometheus
+
+rate:
+  limit:
+    window:
+      ms: 60000
+    max:
+      per:
+        window: 5
