@@ -35,6 +35,8 @@ services:
     depends_on: [zookeeper]
     ports:
       - "9092:9092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
@@ -44,6 +46,24 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false'
     networks: [ns-net]
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: ns-kafka-init
+    depends_on:
+      - kafka
+    networks: [ns-net]
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      "
+      echo 'Waiting for Kafka to be ready...'
+      sleep 20
+      kafka-topics --create --if-not-exists --topic raw-events --partitions 12 --replication-factor 1 --bootstrap-server kafka:29092
+      kafka-topics --create --if-not-exists --topic notification-requests --partitions 6 --replication-factor 1 --bootstrap-server kafka:29092
+      kafka-topics --create --if-not-exists --topic notification-dlq --partitions 3 --replication-factor 1 --bootstrap-server kafka:29092
+      echo 'All topics created successfully.'
+      "
+    restart: "no"
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
@@ -88,3 +108,4 @@ networks:
 
 volumes:
   postgres_data:
+  kafka_data:
